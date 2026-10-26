@@ -17,7 +17,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.className} flex h-screen bg-gray-100 overflow-hidden`}>
+      {/* Add suppressHydrationWarning here to prevent browser extensions from crashing Next.js */}
+      <body 
+        className={`${inter.className} flex h-screen bg-gray-100 overflow-hidden`}
+        suppressHydrationWarning
+      >
         <Sidebar />
         <div className="flex-1 overflow-auto">
           {children}
