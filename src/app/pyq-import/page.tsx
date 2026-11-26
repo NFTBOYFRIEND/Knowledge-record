@@ -55,17 +55,13 @@ export default function PyqImportPage() {
     return { subjects, topics, subtopics };
   }
 
-  function resolveByName(rows: TaxonomyRow[], name: unknown, suppliedId?: unknown) {
+  // Gemini must never be trusted to provide database UUIDs.
+  // Resolve taxonomy exclusively from names in the live Supabase taxonomy.
+  function resolveByName(rows: TaxonomyRow[], name: unknown) {
     const cleanName = String(name ?? '').trim();
-    if (!cleanName && !suppliedId) return { row: null as TaxonomyRow | null, error: null as string | null };
-    if (suppliedId) {
-      const byId = rows.find(row => row.id === suppliedId);
-      if (!byId) return { row: null, error: `Unknown taxonomy ID: ${suppliedId}` };
-      if (cleanName && norm(byId.name) !== norm(cleanName)) return { row: null, error: `Name/ID mismatch: "${cleanName}" does not match "${byId.name}"` };
-      return { row: byId, error: null };
-    }
+    if (!cleanName) return { row: null as TaxonomyRow | null, error: 'Taxonomy name is missing.' };
     const matches = rows.filter(row => norm(row.name) === norm(cleanName));
-    if (matches.length === 1) return { row: matches[0], error: null };
+    if (matches.length === 1) return { row: matches[0], error: null as string | null };
     if (matches.length > 1) return { row: null, error: `Ambiguous taxonomy name: "${cleanName}"` };
     return { row: null, error: `Not found in taxonomy: "${cleanName}"` };
   }
@@ -95,9 +91,9 @@ export default function PyqImportPage() {
         const subjectName = item.subject_name ?? item.subject ?? taxonomyObj.subject_name ?? taxonomyObj.subject;
         const topicName = item.topic_name ?? item.topic ?? taxonomyObj.topic_name ?? taxonomyObj.topic;
         const subtopicName = item.subtopic_name ?? item.subtopic ?? taxonomyObj.subtopic_name ?? taxonomyObj.subtopic;
-        const subject = resolveByName(taxonomy.subjects, subjectName, item.subject_id ?? taxonomyObj.subject_id);
-        const topic = resolveByName(taxonomy.topics, topicName, item.topic_id ?? taxonomyObj.topic_id);
-        const subtopic = resolveByName(taxonomy.subtopics, subtopicName, item.subtopic_id ?? taxonomyObj.subtopic_id);
+        const subject = resolveByName(taxonomy.subjects, subjectName);
+        const topic = resolveByName(taxonomy.topics, topicName);
+        const subtopic = resolveByName(taxonomy.subtopics, subtopicName);
         const prefix = `Question ${index + 1}`;
         if (subject.error) localIssues.push(`${prefix}: ${subject.error}`);
         if (topic.error) localIssues.push(`${prefix}: ${topic.error}`);
