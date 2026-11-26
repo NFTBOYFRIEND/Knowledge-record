@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 type TaxonomyRow = { id: string; name: string; subject_id?: string; topic_id?: string };
@@ -20,7 +20,11 @@ const asObject = (value: any) => value && typeof value === 'object' && !Array.is
 export default function PyqImportPage() {
   const [jsonText, setJsonText] = useState('');
   const [examName, setExamName] = useState('');
-  const [examYear, setExamYear] = useState(String(new Date().getFullYear()));
+  const [examYear, setExamYear] = useState('');
+
+  useEffect(() => {
+    setExamYear(String(new Date().getFullYear()));
+  }, []);
   const [taxonomy, setTaxonomy] = useState<Taxonomy>({ subjects: [], topics: [], subtopics: [] });
   const [prepared, setPrepared] = useState<PreparedQuestion[]>([]);
   const [issues, setIssues] = useState<string[]>([]);
