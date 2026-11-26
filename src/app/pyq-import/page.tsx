@@ -14,7 +14,7 @@ type PreparedQuestion = {
   exam_name: string; exam_year: number;
 };
 
-const norm = (value: unknown) => String(value ?? '').trim().toLocaleLowerCase().replace(/\\s+/g, ' ');
+const norm = (value: unknown) => String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 const asObject = (value: any) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
 export default function PyqImportPage() {
@@ -66,11 +66,19 @@ export default function PyqImportPage() {
     return { row: null, error: `Not found in taxonomy: "${cleanName}"` };
   }
 
-  function parseAndValidate() {
+  async function parseAndValidate() {
     setIssues([]);
     setStatus('');
     setImportedCount(0);
+    setLoading(true);
+    setStatus('Checking Supabase taxonomy…');
     try {
+      const activeTaxonomy = taxonomy.subjects.length && taxonomy.topics.length && taxonomy.subtopics.length
+        ? taxonomy
+        : await loadTaxonomy();
+      if (!activeTaxonomy.subjects.length || !activeTaxonomy.topics.length || !activeTaxonomy.subtopics.length) {
+        throw new Error(`Taxonomy load incomplete: subjects ${activeTaxonomy.subjects.length}, topics ${activeTaxonomy.topics.length}, subtopics ${activeTaxonomy.subtopics.length}. Check Supabase read access.`);
+      }
       const cleaned = jsonText.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, '').replace(/\s*\x60\x60\x60$/, '');
       const root = JSON.parse(cleaned);
       const meta = asObject(root.metadata || root.exam || root);
@@ -91,9 +99,9 @@ export default function PyqImportPage() {
         const subjectName = item.subject_name ?? item.subject ?? taxonomyObj.subject_name ?? taxonomyObj.subject;
         const topicName = item.topic_name ?? item.topic ?? taxonomyObj.topic_name ?? taxonomyObj.topic;
         const subtopicName = item.subtopic_name ?? item.subtopic ?? taxonomyObj.subtopic_name ?? taxonomyObj.subtopic;
-        const subject = resolveByName(taxonomy.subjects, subjectName);
-        const topic = resolveByName(taxonomy.topics, topicName);
-        const subtopic = resolveByName(taxonomy.subtopics, subtopicName);
+        const subject = resolveByName(activeTaxonomy.subjects, subjectName);
+        const topic = resolveByName(activeTaxonomy.topics, topicName);
+        const subtopic = resolveByName(activeTaxonomy.subtopics, subtopicName);
         const prefix = `Question ${index + 1}`;
         if (subject.error) localIssues.push(`${prefix}: ${subject.error}`);
         if (topic.error) localIssues.push(`${prefix}: ${topic.error}`);
@@ -127,11 +135,13 @@ export default function PyqImportPage() {
       setPrepared(staged);
       setIssues(localIssues);
       setParsed(true);
-      setStatus(localIssues.length ? 'Review required: resolve all mapping and validation issues before importing.' : `Validated ${staged.length} questions. Review the preview, then import.`);
+      setStatus(localIssues.length ? `Taxonomy loaded (${activeTaxonomy.subjects.length} subjects, ${activeTaxonomy.topics.length} topics, ${activeTaxonomy.subtopics.length} subtopics). Review required: resolve all mapping and validation issues before importing.` : `Validated ${staged.length} questions using ${activeTaxonomy.subjects.length} subjects, ${activeTaxonomy.topics.length} topics, and ${activeTaxonomy.subtopics.length} subtopics. Review the preview, then import.`);
     } catch (error: any) {
       setPrepared([]);
       setParsed(false);
       setStatus(error.message || 'Could not parse JSON.');
+    } finally {
+      setLoading(false);
     }
   }
 
