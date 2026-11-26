@@ -110,12 +110,17 @@ export default function PyqImportPage() {
         if (topic.row && subtopic.row && subtopic.row.topic_id !== topic.row.id) localIssues.push(`${prefix}: subtopic does not belong to selected topic.`);
         const question = String(item.question ?? item.question_text ?? '').trim();
         if (!question) localIssues.push(`${prefix}: question text is missing.`);
+        const rawDifficulty = item.difficulty == null ? null : norm(item.difficulty);
+        const difficulty = rawDifficulty === 'medium' ? 'moderate' : rawDifficulty;
+        if (difficulty !== null && !['easy', 'moderate', 'hard'].includes(difficulty)) {
+          localIssues.push(`${prefix}: invalid difficulty "${item.difficulty}". Use easy, moderate, hard, or null.`);
+        }
         const options = item.options ?? [];
         if (!Array.isArray(options) && (typeof options !== 'object' || options === null)) localIssues.push(`${prefix}: options must be an array or object.`);
         return {
           question, options, correct_answer: item.correct_answer ?? item.answer ?? null,
           solution_explanation: item.solution_explanation ?? item.explanation ?? item.solution ?? null,
-          difficulty: item.difficulty ?? null,
+          difficulty: difficulty,
           subject_name: subject.row?.name ?? (subjectName ? String(subjectName).trim() : null), subject_id: subject.row?.id ?? null,
           topic_name: topic.row?.name ?? (topicName ? String(topicName).trim() : null), topic_id: topic.row?.id ?? null,
           subtopic_name: subtopic.row?.name ?? (subtopicName ? String(subtopicName).trim() : null), subtopic_id: subtopic.row?.id ?? null,
