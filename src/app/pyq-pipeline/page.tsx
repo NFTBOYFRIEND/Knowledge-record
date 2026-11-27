@@ -58,7 +58,7 @@ export default function PyqPipelinePage() {
       setUploadError('Enter the exam name.');
       return;
     }
-    if (!/^\\d{4}$/.test(year)) {
+    if (!/^\d{4}$/.test(year)) {
       setUploadError('Enter a valid four-digit exam year.');
       return;
     }
@@ -219,7 +219,7 @@ export default function PyqPipelinePage() {
             </p>
             <button
               type="submit"
-              disabled={uploading || !file || !examName.trim() || !/^\\d{4}$/.test(year)}
+              disabled={uploading || !file || !examName.trim() || !/^\d{4}$/.test(year)}
               className="inline-flex min-w-44 items-center justify-center rounded-xl bg-blue-700 px-6 py-3 font-bold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               {uploading ? 'Extracting PDF…' : 'Upload & extract PDF'}
