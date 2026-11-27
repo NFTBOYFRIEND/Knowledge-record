@@ -11,6 +11,7 @@ export default function Sidebar() {
     { name: 'Knowledge Studio', path: '/studio' },
     { name: 'GS Dashboard', path: '/dashboard' },
     { name: 'Single Unit Studio', path: '/unit-studio' },
+    { name: 'PYQ PDF Pipeline', path: '/pyq-pipeline' },
     { name: 'PYQ JSON Import', path: '/pyq-import' },
   ];
 
