@@ -55,15 +55,26 @@ export default function PyqImportPage() {
     return { subjects, topics, subtopics };
   }
 
-  // Gemini must never be trusted to provide database UUIDs.
-  // Resolve taxonomy exclusively from names in the live Supabase taxonomy.
-  function resolveByName(rows: TaxonomyRow[], name: unknown) {
+  // Resolve each taxonomy level inside its selected parent. Names can repeat
+  // under different parents, so never look up topics/subtopics globally.
+  // Missing taxonomy entries remain publishable with null IDs for manual
+  // creation in Supabase; only a supplied but contradictory hierarchy blocks.
+  function resolveSubject(rows: TaxonomyRow[], name: unknown) {
     const cleanName = String(name ?? '').trim();
-    if (!cleanName) return { row: null as TaxonomyRow | null, error: 'Taxonomy name is missing.' };
+    if (!cleanName) return { row: null as TaxonomyRow | null, error: null as string | null };
     const matches = rows.filter(row => norm(row.name) === norm(cleanName));
     if (matches.length === 1) return { row: matches[0], error: null as string | null };
-    if (matches.length > 1) return { row: null, error: `Ambiguous taxonomy name: "${cleanName}"` };
-    return { row: null, error: `Not found in taxonomy: "${cleanName}"` };
+    if (matches.length > 1) return { row: null, error: `Ambiguous subject name: "${cleanName}"` };
+    return { row: null, error: null };
+  }
+
+  function resolveChild(rows: TaxonomyRow[], name: unknown, parentId: string | null, parentField: 'subject_id' | 'topic_id', label: string) {
+    const cleanName = String(name ?? '').trim();
+    if (!cleanName || !parentId) return { row: null as TaxonomyRow | null, error: null as string | null };
+    const matches = rows.filter(row => row[parentField] === parentId && norm(row.name) === norm(cleanName));
+    if (matches.length === 1) return { row: matches[0], error: null as string | null };
+    if (matches.length > 1) return { row: null, error: `Ambiguous ${label} "${cleanName}" under the selected parent.` };
+    return { row: null, error: null };
   }
 
   async function parseAndValidate() {
@@ -99,15 +110,13 @@ export default function PyqImportPage() {
         const subjectName = item.subject_name ?? item.subject ?? taxonomyObj.subject_name ?? taxonomyObj.subject;
         const topicName = item.topic_name ?? item.topic ?? taxonomyObj.topic_name ?? taxonomyObj.topic;
         const subtopicName = item.subtopic_name ?? item.subtopic ?? taxonomyObj.subtopic_name ?? taxonomyObj.subtopic;
-        const subject = resolveByName(activeTaxonomy.subjects, subjectName);
-        const topic = resolveByName(activeTaxonomy.topics, topicName);
-        const subtopic = resolveByName(activeTaxonomy.subtopics, subtopicName);
+        const subject = resolveSubject(activeTaxonomy.subjects, subjectName);
+        const topic = resolveChild(activeTaxonomy.topics, topicName, subject.row?.id ?? null, 'subject_id', 'topic');
+        const subtopic = resolveChild(activeTaxonomy.subtopics, subtopicName, topic.row?.id ?? null, 'topic_id', 'subtopic');
         const prefix = `Question ${index + 1}`;
         if (subject.error) localIssues.push(`${prefix}: ${subject.error}`);
         if (topic.error) localIssues.push(`${prefix}: ${topic.error}`);
         if (subtopic.error) localIssues.push(`${prefix}: ${subtopic.error}`);
-        if (subject.row && topic.row && topic.row.subject_id !== subject.row.id) localIssues.push(`${prefix}: topic does not belong to selected subject.`);
-        if (topic.row && subtopic.row && subtopic.row.topic_id !== topic.row.id) localIssues.push(`${prefix}: subtopic does not belong to selected topic.`);
         const question = String(item.question ?? item.question_text ?? '').trim();
         if (!question) localIssues.push(`${prefix}: question text is missing.`);
         const rawDifficulty = item.difficulty == null ? null : norm(item.difficulty);
@@ -140,7 +149,7 @@ export default function PyqImportPage() {
       setPrepared(staged);
       setIssues(localIssues);
       setParsed(true);
-      setStatus(localIssues.length ? `Taxonomy loaded (${activeTaxonomy.subjects.length} subjects, ${activeTaxonomy.topics.length} topics, ${activeTaxonomy.subtopics.length} subtopics). Review required: resolve all mapping and validation issues before importing.` : `Validated ${staged.length} questions using ${activeTaxonomy.subjects.length} subjects, ${activeTaxonomy.topics.length} topics, and ${activeTaxonomy.subtopics.length} subtopics. Review the preview, then import.`);
+      setStatus(localIssues.length ? `Taxonomy loaded (${activeTaxonomy.subjects.length} subjects, ${activeTaxonomy.topics.length} topics, ${activeTaxonomy.subtopics.length} subtopics). Some taxonomy names are not yet in Supabase. Those questions can still be imported with their names preserved and null taxonomy IDs for manual mapping.` : `Validated ${staged.length} questions using ${activeTaxonomy.subjects.length} subjects, ${activeTaxonomy.topics.length} topics, and ${activeTaxonomy.subtopics.length} subtopics. Review the preview, then import.`);
     } catch (error: any) {
       setPrepared([]);
       setParsed(false);
@@ -241,7 +250,7 @@ export default function PyqImportPage() {
           {issues.length > 0 && <section className="mb-6 rounded-xl border border-red-200 bg-red-50 p-5">
             <h2 className="mb-2 font-bold text-red-900">Validation issues ({issues.length})</h2>
             <ul className="max-h-64 list-disc space-y-1 overflow-auto pl-5 text-sm text-red-800">{issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul>
-            <p className="mt-3 text-xs text-red-700">No records will be imported until every issue is resolved. Names must match the existing taxonomy; this tool does not invent or silently create taxonomy entries.</p>
+            <p className="mt-3 text-xs text-red-700">Only data-validation issues block import. Missing topic/subtopic names are preserved in the imported record with null IDs so you can create and map them manually in Supabase.</p>
           </section>}
           <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5">
