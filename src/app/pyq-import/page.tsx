@@ -17,46 +17,155 @@ const norm = (value: unknown) =>
 const asObject = (value: any) =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
-const EXTRACTION_PROMPT = `# ROLE: QUESTION PAPER JSON EXTRACTOR
+const EXTRACTION_PROMPT = `ROLE: PRECISION QUESTION PAPER AND ANSWER KEY EXTRACTOR
 
-Inspect the attached question-paper PDF and extract every question exactly as printed.
+You are an expert PDF question-paper extraction system. Your task is to inspect the attached PDF and extract every question, all its answer options, and its officially indicated correct answer.
 
-Return ONLY these fields for each question:
-- question
-- options
-- correct_answer
+1. OUTPUT REQUIREMENTS
 
-Do NOT extract exam name or exam year. The user enters both in the Knowledge Studio form; the importer adds them to every database row.
+Return ONLY these three fields for every question:
 
-RULES:
-- Extract every visible question in page order; do not omit or duplicate questions.
-- Preserve original wording, mathematical symbols, numbers, units, tables, sequences, and option order.
-- Include all answer options exactly as printed.
-- Set correct_answer only when an official answer key or official marking is explicitly visible in the PDF (for example, the official green tick).
-- Never solve a question to guess its answer. Never confuse a candidate's selected response with the official answer.
-- If the official answer is not explicitly visible or cannot be read confidently, set correct_answer to null.
-- Do not return question numbers, metadata, subject, topic, subtopic, learning unit, question pattern, difficulty, solution, explanation, or any other fields.
-- For passage-based questions, include necessary passage context so each question can be understood independently.
-- If the PDF is too large for one response, return sequential batches in the same JSON structure without repeating earlier questions.
+- "question"
+- "options"
+- "correct_answer"
 
-Return valid JSON only, with exactly this structure:
+Do not include exam name, exam year, question number, subject, topic, subtopic, learning unit, question pattern, difficulty, solution, explanation, or any other metadata.
+
+The importer will add exam name and exam year separately.
+
+2. CRITICAL: VISUAL ANSWER MARKING DETECTION
+
+You MUST inspect the actual visual appearance of every PDF page. Do not rely exclusively on extracted text or OCR.
+
+The PDF may contain answer indicators represented by graphical symbols, colours, or annotations that are not captured by text extraction.
+
+Use these rules to identify the correct answer:
+
+1. A green tick (✓) beside an option indicates the officially marked correct answer.
+2. A red cross (✗) beside an option indicates an incorrect answer.
+3. Identify the green tick visually and associate it with the exact option belonging to that question.
+4. Return the complete text of the green-ticked option as "correct_answer".
+5. Do not mistake a red cross, candidate-selected response, handwritten mark, or unrelated symbol for an official correct-answer indicator.
+6. If a question has multiple options with visible markings, inspect the markings carefully and identify the officially indicated correct option.
+7. If the green tick is visible but OCR fails to recognise it, trust the visual PDF evidence.
+8. If the marking is genuinely missing, obscured, ambiguous, or unreadable, use "null".
+
+IMPORTANT: Do not return null merely because the answer marking is missing from extracted text. Inspect the rendered PDF page before deciding that an answer is unavailable.
+
+3. QUESTION EXTRACTION RULES
+
+- Extract every visible question in the original page order.
+- Do not omit, duplicate, merge, or rearrange questions.
+- Preserve the exact original wording, spelling, punctuation, mathematical expressions, symbols, numbers, units, and sequences.
+- Extract every answer option exactly as printed.
+- Preserve the original option order.
+- Include tables, diagrams, statements, and other question-specific information in the question text whenever necessary to understand the question independently.
+- For passage-based questions, include the relevant passage context with each question.
+- Preserve the original language. Do not translate or paraphrase questions or options.
+- Do not correct spelling or grammatical errors in the source.
+
+4. CORRECT ANSWER RULES
+
+The "correct_answer" value must contain the exact text of the officially marked correct option.
+
+Example:
+
+If the PDF visually shows:
+
+- A. 100
+- B. 200
+- C. 300 ✓
+- D. 400
+
+Return:
+
+"correct_answer": "300"
+
+Do not return "C" unless the option itself consists only of the letter C.
+
+Never calculate, solve, infer, or guess an answer to fill a missing official marking.
+
+Never use general knowledge or an external answer key to replace the PDF's markings.
+
+If no official correct-answer marking can be confidently identified, return:
+
+"correct_answer": null
+
+5. PAGE-BY-PAGE VERIFICATION
+
+Follow this mandatory workflow:
+
+1. Determine the total number of PDF pages.
+2. Inspect every page in its original visual form.
+3. Extract the question text and all options.
+4. Visually inspect the answer indicators beside each option.
+5. Match every green tick to the correct question and option.
+6. Verify that red crosses have not been interpreted as correct answers.
+7. Check question order and ensure no question is missing or duplicated.
+8. Validate the final JSON syntax.
+
+Do not skip pages because their text extraction appears empty or incomplete. Render and inspect those pages visually.
+
+6. OUTPUT FORMAT
+
+Return valid JSON with exactly this structure:
 
 {
-  \"questions\": [
-    {
-      \"question\": \"Complete original question text\",
-      \"options\": [\"Option A text\", \"Option B text\", \"Option C text\", \"Option D text\"],
-      \"correct_answer\": \"Exact official option text\"
-    },
-    {
-      \"question\": \"Next question text\",
-      \"options\": [\"Option A\", \"Option B\", \"Option C\", \"Option D\"],
-      \"correct_answer\": null
-    }
-  ]
+"questions": [
+{
+"question": "Complete original question text",
+"options": [
+"Option A text",
+"Option B text",
+"Option C text",
+"Option D text"
+],
+"correct_answer": "Exact text of the officially green-ticked option"
+},
+{
+"question": "Next complete original question",
+"options": [
+"Option A text",
+"Option B text",
+"Option C text",
+"Option D text"
+],
+"correct_answer": null
+}
+]
 }
 
-No Markdown fences or commentary. Accuracy and source fidelity are more important than speed.`;
+7. JSON VALIDATION
+
+Before returning the result, verify:
+
+- The output is valid, parseable JSON.
+- There are no Markdown code fences or explanatory comments.
+- All strings use valid JSON escaping.
+- No unnecessary backslashes appear before square brackets or other characters.
+- Every question has exactly three fields: "question", "options", and "correct_answer".
+- "options" is always an array of strings.
+- "correct_answer" is either an exact option string or "null".
+- No additional fields are present.
+
+8. LARGE PDF HANDLING
+
+If the PDF is too large for one response:
+
+- Extract questions in sequential batches.
+- Maintain the original page and question order.
+- Continue from the exact point where the previous batch ended.
+- Never repeat questions from earlier batches.
+- Use the same JSON structure for every batch.
+- Do not sacrifice visual answer-marking verification to increase extraction speed.
+
+FINAL PRIORITY
+
+Accuracy and source fidelity are more important than speed.
+
+Every question must be extracted from the PDF, and every available official green-tick answer must be captured. Do not leave a correct answer as null when its green tick is visibly identifiable in the PDF.
+
+Return ONLY valid JSON. No commentary, no explanations, and no Markdown fences.`;
 
 export default function PyqImportPage() {
   const [jsonText, setJsonText] = useState('');
