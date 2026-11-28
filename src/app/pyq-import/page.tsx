@@ -166,7 +166,9 @@ export default function PyqImportPage() {
   const [loading, setLoading] = useState(false);
   const [parsed, setParsed] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
-  const [promptCopied, setPromptCopied] = useState(false);\n  const [editIndex, setEditIndex] = useState<number | null>(null);\n  const [editDraft, setEditDraft] = useState('');
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState('');
 
   async function copyExtractionPrompt() {
     try {
