@@ -13,7 +13,7 @@ type PreparedQuestion = {
 };
 
 const norm = (value: unknown) =>
-  String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase().replace(/\\s+/g, ' ');
+  String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 
 const EXTRACTION_PROMPT = `ROLE: PRECISION QUESTION PAPER AND ANSWER KEY EXTRACTOR
 
