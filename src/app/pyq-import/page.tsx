@@ -17,76 +17,46 @@ const norm = (value: unknown) =>
 const asObject = (value: any) =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
-const EXTRACTION_PROMPT = \`# ROLE: PREVIOUS YEAR QUESTION PAPER JSON EXTRACTOR
+const EXTRACTION_PROMPT = `# ROLE: QUESTION PAPER JSON EXTRACTOR
 
-Read the uploaded question-paper PDF and extract its questions accurately.
+Inspect the attached question-paper PDF and extract every question exactly as printed.
 
-YOUR ONLY TASK IS TO EXTRACT:
-1. Exam name
-2. Exam year
-3. Complete question text
-4. All answer options
-5. Official correct answer, only when it is explicitly marked in the source
+Return ONLY these fields for each question:
+- question
+- options
+- correct_answer
 
-Do NOT classify questions. Do NOT generate subject, topic, subtopic, learning unit, question pattern, difficulty, solution, explanation, taxonomy IDs, or any other fields.
+Do NOT extract exam name or exam year. The user enters both in the Knowledge Studio form; the importer adds them to every database row.
 
-## EXTRACTION RULES
+RULES:
+- Extract every visible question in page order; do not omit or duplicate questions.
+- Preserve original wording, mathematical symbols, numbers, units, tables, sequences, and option order.
+- Include all answer options exactly as printed.
+- Set correct_answer only when an official answer key or official marking is explicitly visible in the PDF (for example, the official green tick).
+- Never solve a question to guess its answer. Never confuse a candidate's selected response with the official answer.
+- If the official answer is not explicitly visible or cannot be read confidently, set correct_answer to null.
+- Do not return question numbers, metadata, subject, topic, subtopic, learning unit, question pattern, difficulty, solution, explanation, or any other fields.
+- For passage-based questions, include necessary passage context so each question can be understood independently.
+- If the PDF is too large for one response, return sequential batches in the same JSON structure without repeating earlier questions.
 
-- Inspect every page of the supplied PDF.
-- Extract every actual question; do not silently skip or duplicate questions.
-- Preserve the original question wording, numbering, mathematical symbols, values, units, tables, sequences, and option order.
-- Include all options visible in the source.
-- For passage-based questions, include the necessary passage context so each question can be understood independently.
-- Read diagrams or image-based content carefully. Describe essential visual information in the question text only when it can be read reliably.
-- Identify the correct answer only from an explicit official answer marking, such as the green tick used by this paper.
-- Do not confuse a candidate's selected response with the official correct answer.
-- Do not solve a question to guess the official answer.
-- If no official answer is shown, use null.
-- If text, options, or answer marking are unclear, do not guess. Preserve what is readable and use null for an uncertain correct answer.
-- Preserve the original question number in question_number for checking, but do not add it to the question text unless it is part of the printed wording.
-
-## OUTPUT REQUIREMENTS
-
-Return valid JSON only. Do not include Markdown fences, commentary, explanations, or text outside the JSON.
-
-Use exactly this structure:
+Return valid JSON only, with exactly this structure:
 
 {
-  "metadata": {
-    "exam_name": "Exact examination name",
-    "exam_year": 2025
-  },
-  "questions": [
+  \"questions\": [
     {
-      "question_number": "Q.1",
-      "question": "Complete original question text",
-      "options": [
-        "Option A text",
-        "Option B text",
-        "Option C text",
-        "Option D text"
-      ],
-      "correct_answer": "Exact text of the officially marked option"
+      \"question\": \"Complete original question text\",
+      \"options\": [\"Option A text\", \"Option B text\", \"Option C text\", \"Option D text\"],
+      \"correct_answer\": \"Exact official option text\"
+    },
+    {
+      \"question\": \"Next question text\",
+      \"options\": [\"Option A\", \"Option B\", \"Option C\", \"Option D\"],
+      \"correct_answer\": null
     }
   ]
 }
 
-## STRICT FIELD RULES
-
-- metadata.exam_name must be a string.
-- metadata.exam_year must be a four-digit number.
-- questions must be an array.
-- Every question must contain question, options, and correct_answer.
-- options must be an array of strings in the original order.
-- correct_answer must be the exact option text or null.
-- question_number is retained for source auditing; the importer will not store it in the database.
-- Do not add any other fields.
-
-## LARGE PDF / RESPONSE LIMITS
-
-If the entire PDF cannot fit in one response, process it in sequential batches. Return the same JSON structure for each batch. Preserve original question numbers and never repeat questions from earlier batches. Do not claim the entire paper is complete when only a batch has been processed. State the page or question range in metadata only if it can be represented without adding fields; otherwise keep the JSON schema unchanged.
-
-Accuracy and source fidelity are more important than speed. Never invent missing information.\`;
+No Markdown fences or commentary. Accuracy and source fidelity are more important than speed.`;
 
 export default function PyqImportPage() {
   const [jsonText, setJsonText] = useState('');
@@ -120,17 +90,16 @@ export default function PyqImportPage() {
         .replace(/^\x60\x60\x60(?:json)?\s*/i, '')
         .replace(/\s*\x60\x60\x60$/, '');
       const root = JSON.parse(cleaned);
-      const meta = asObject(root.metadata || root.exam || root);
-      const finalExamName = String(meta.exam_name || meta.examName || examName).trim();
-      const rawYear = meta.exam_year ?? meta.examYear ?? examYear;
-      const finalYear = Number(rawYear);
+      // Exam identity is authoritative from the frontend form, never from AI JSON.
+      const finalExamName = examName.trim();
+      const finalYear = Number(examYear);
 
-      if (!finalExamName) throw new Error('Exam name is required. Add metadata.exam_name or enter it above.');
+      if (!finalExamName) throw new Error('Enter the exam name in the form above.');
       if (!Number.isInteger(finalYear) || finalYear < 1900 || finalYear > 2100) {
-        throw new Error('Exam year must be a valid four-digit year.');
+        throw new Error('Enter a valid four-digit exam year in the form above.');
       }
 
-      const rows = Array.isArray(root) ? root : (root.questions || root.pyqs || root.data);
+      const rows = Array.isArray(root) ? root : root.questions;
       if (!Array.isArray(rows) || rows.length === 0) {
         throw new Error('JSON must contain a non-empty questions array.');
       }
@@ -208,8 +177,14 @@ export default function PyqImportPage() {
       }
 
       const existingSet = new Set(existing.map(norm));
+      const batchSeen = new Set<string>();
       const toInsert = prepared
-        .filter(q => !existingSet.has(norm(q.question)))
+        .filter(q => {
+          const key = norm(q.question);
+          if (existingSet.has(key) || batchSeen.has(key)) return false;
+          batchSeen.add(key);
+          return true;
+        })
         .map(q => ({
           exam_name: q.exam_name,
           exam_year: q.exam_year,
@@ -272,9 +247,9 @@ export default function PyqImportPage() {
         <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">1. Gemini JSON</h2>
-            <span className="text-xs text-slate-500">Required: metadata + questions[]</span>
+            <span className="text-xs text-slate-500">Required: questions[]</span>
           </div>
-          <textarea value={jsonText} onChange={e => { setJsonText(e.target.value); setParsed(false); setPrepared([]); setIssues([]); }} placeholder={'Paste Gemini response here…\n\n{\n  "metadata": { "exam_name": "SSC CHSL Tier-I", "exam_year": 2024 },\n  "questions": [\n    { "question_number": "Q.1", "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "B" }\n  ]\n}'} className="min-h-[320px] w-full rounded-lg border border-slate-300 bg-slate-50 p-4 font-mono text-sm outline-none focus:border-blue-500" />
+          <textarea value={jsonText} onChange={e => { setJsonText(e.target.value); setParsed(false); setPrepared([]); setIssues([]); }} placeholder={'Paste Gemini JSON here…\n\n{\n  "questions": [\n    { "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "Exact option text" }\n  ]\n}'} className="min-h-[320px] w-full rounded-lg border border-slate-300 bg-slate-50 p-4 font-mono text-sm outline-none focus:border-blue-500" />
           <div className="mt-4 flex flex-wrap gap-3">
             <button onClick={parseAndValidate} disabled={loading || !jsonText.trim()} className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-50">Parse & validate</button>
           </div>
