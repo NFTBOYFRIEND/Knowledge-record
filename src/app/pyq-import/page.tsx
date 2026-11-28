@@ -13,14 +13,6 @@ type PreparedQuestion = {
 
 import { parseQuestionJson, validateQuestionJson, type ImportIssue } from '@/lib/question-json-validation';
 
-type PreparedQuestion = {
-  exam_name: string;
-  exam_year: number;
-  question: string;
-  options: string[];
-  correct_answer: string | null;
-};
-
 const norm = (value: unknown) =>
   String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase().replace(/\\s+/g, ' ');
 
