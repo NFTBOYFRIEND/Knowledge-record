@@ -17,6 +17,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Regenerate lockfile using npm
+        run: npm install --package-lock-only
+      - name: Upload generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-package-lock
+          path: package-lock.json
       - name: Install locked dependencies
         run: npm ci
       - name: Lint
