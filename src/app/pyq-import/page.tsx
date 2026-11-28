@@ -292,13 +292,30 @@ export default function PyqImportPage() {
       const nextQuestions = [...current.questions];
       nextQuestions[editIndex] = edited;
       const nextText = JSON.stringify({ questions: nextQuestions }, null, 2);
+      const nextIssues = validateQuestionJson({ questions: nextQuestions });
+      const finalExamName = examName.trim();
+      const finalYear = Number(examYear);
+      const metadataIssues: ImportIssue[] = [];
+      if (!finalExamName) metadataIssues.push({ path: 'exam_name', message: 'Enter the exam name in the form above.' });
+      if (!Number.isInteger(finalYear) || finalYear < 1900 || finalYear > 2100) metadataIssues.push({ path: 'exam_year', message: 'Enter a valid four-digit exam year.' });
       setJsonText(nextText);
       setEditIndex(null);
       setEditDraft('');
+      setRepairPreview(null);
+      setIssues([...nextIssues, ...metadataIssues]);
       setPrepared([]);
       setParsed(false);
-      setRepairPreview(null);
-      setStatus(`Saved changes to question ${editIndex + 1}. Validate again to refresh the import preview.`);
+      if (nextIssues.length === 0 && metadataIssues.length === 0) {
+        setPrepared(nextQuestions.map((raw: any) => ({
+          exam_name: finalExamName,
+          exam_year: finalYear,
+          question: raw.question.trim(),
+          options: raw.options.map((option: string) => option.trim()),
+          correct_answer: raw.correct_answer,
+        })));
+        setParsed(true);
+      }
+      setStatus(`Saved changes to question ${editIndex + 1}. ${nextIssues.length + metadataIssues.length} issue(s) remain.`);
     } catch (error) {
       setStatus(`Edited question is not valid JSON: ${error instanceof Error ? error.message : 'Invalid JSON'}`);
     }
