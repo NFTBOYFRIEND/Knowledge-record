@@ -207,6 +207,7 @@ export default function PyqImportPage() {
 
       const validationIssues = [...metadataIssues, ...validateQuestionJson(parsedResult.value)];
       setIssues(validationIssues);
+      setParsed(true);
       if (validationIssues.length) {
         setStatus('Validation found blocking issues. Fix the listed items and validate again.');
         return;
