@@ -113,11 +113,11 @@ export default function PyqImportPage() {
           ? rawOptions.map((option: any) => String(option ?? '').trim())
           : [];
 
-        if (!question) localIssues.push(\`Question \${index + 1}: question text is missing.\`);
+        if (!question) localIssues.push(`Question ${index + 1}: question text is missing.`);
         if (!Array.isArray(rawOptions)) {
-          localIssues.push(\`Question \${index + 1}: options must be a JSON array.\`);
+          localIssues.push(`Question ${index + 1}: options must be a JSON array.`);
         } else if (options.length === 0 || options.some((option: string) => !option)) {
-          localIssues.push(\`Question \${index + 1}: options are empty or contain blank entries.\`);
+          localIssues.push(`Question ${index + 1}: options are empty or contain blank entries.`);
         }
 
         const rawAnswer = item.correct_answer ?? item.answer ?? null;
@@ -137,7 +137,7 @@ export default function PyqImportPage() {
       const seen = new Set<string>();
       staged.forEach((q, index) => {
         const key = norm(q.question);
-        if (key && seen.has(key)) localIssues.push(\`Question \${index + 1}: duplicate question inside this JSON payload.\`);
+        if (key && seen.has(key)) localIssues.push(`Question ${index + 1}: duplicate question inside this JSON payload.`);
         seen.add(key);
       });
 
@@ -148,7 +148,7 @@ export default function PyqImportPage() {
       setParsed(true);
       setStatus(localIssues.length
         ? 'Validation found issues. Correct the JSON before importing.'
-        : \`Validated \${staged.length} questions. Only exam_name, exam_year, question, options and correct_answer will be inserted.\`);
+        : `Validated ${staged.length} questions. Only exam_name, exam_year, question, options and correct_answer will be inserted.`);
     } catch (error: any) {
       setPrepared([]);
       setParsed(false);
@@ -208,12 +208,12 @@ export default function PyqImportPage() {
         setImportedCount(inserted);
       }
 
-      setStatus(\`Import complete: \${inserted} questions saved. \${prepared.length - toInsert.length} duplicates skipped.\`);
+      setStatus(`Import complete: ${inserted} questions saved. ${prepared.length - toInsert.length} duplicates skipped.`);
       setJsonText('');
       setPrepared([]);
       setParsed(false);
     } catch (error: any) {
-      setStatus(\`Import stopped after \${importedCount} inserted rows: \${error.message}. Check the table before retrying to avoid duplicate imports.\`);
+      setStatus(`Import stopped after ${importedCount} inserted rows: ${error.message}. Check the table before retrying to avoid duplicate imports.`);
     } finally {
       setLoading(false);
     }
