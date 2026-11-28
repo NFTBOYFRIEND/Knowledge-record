@@ -248,10 +248,9 @@ export default function PyqImportPage() {
       setPrepared([]);
       setParsed(false);
       setEditIndex(null);
-      setStatus(`Removed question ${index + 1}. Validate again to refresh the import preview.`);
+      setStatus(`Removed question ${index + 1}. Validation updated.`);
       const nextIssues = [...validateQuestionJson({ questions: nextQuestions })];
       setIssues(nextIssues);
-      setParsed(true);
       if (nextIssues.length === 0) {
         const finalExamName = examName.trim();
         const finalYear = Number(examYear);
@@ -267,6 +266,7 @@ export default function PyqImportPage() {
             options: raw.options.map((option: string) => option.trim()),
             correct_answer: raw.correct_answer,
           })));
+          setParsed(true);
         }
       }
     } catch (error) {
