@@ -19,153 +19,137 @@ const asObject = (value: any) =>
 
 const EXTRACTION_PROMPT = `ROLE: PRECISION QUESTION PAPER AND ANSWER KEY EXTRACTOR
 
-You are an expert PDF question-paper extraction system. Your task is to inspect the attached PDF and extract every question, all its answer options, and its officially indicated correct answer.
+You are an expert PDF question-paper extraction system. Inspect the attached PDF and extract every question, all answer options, and its officially indicated correct answer.
 
 1. OUTPUT REQUIREMENTS
 
-Return ONLY these three fields for every question:
-
+Return exactly these three fields for every question:
 - "question"
 - "options"
 - "correct_answer"
 
-Do not include exam name, exam year, question number, subject, topic, subtopic, learning unit, question pattern, difficulty, solution, explanation, or any other metadata.
-
-The importer will add exam name and exam year separately.
+Do not include exam name, exam year, question number, subject, topic, subtopic, learning unit, question pattern, difficulty, solution, explanation, or any other metadata. The importer adds exam name and exam year separately.
 
 2. CRITICAL: VISUAL ANSWER MARKING DETECTION
 
 You MUST inspect the actual visual appearance of every PDF page. Do not rely exclusively on extracted text or OCR.
 
-The PDF may contain answer indicators represented by graphical symbols, colours, or annotations that are not captured by text extraction.
-
-Use these rules to identify the correct answer:
-
 1. A green tick (✓) beside an option indicates the officially marked correct answer.
 2. A red cross (✗) beside an option indicates an incorrect answer.
-3. Identify the green tick visually and associate it with the exact option belonging to that question.
+3. Visually associate each green tick with the exact option and question.
 4. Return the complete text of the green-ticked option as "correct_answer".
 5. Do not mistake a red cross, candidate-selected response, handwritten mark, or unrelated symbol for an official correct-answer indicator.
-6. If a question has multiple options with visible markings, inspect the markings carefully and identify the officially indicated correct option.
+6. If multiple options have markings, inspect them carefully and identify the officially indicated correct option.
 7. If the green tick is visible but OCR fails to recognise it, trust the visual PDF evidence.
-8. If the marking is genuinely missing, obscured, ambiguous, or unreadable, use "null".
+8. If the marking is genuinely missing, obscured, ambiguous, or unreadable, use null.
 
-IMPORTANT: Do not return null merely because the answer marking is missing from extracted text. Inspect the rendered PDF page before deciding that an answer is unavailable.
+IMPORTANT: Never return null merely because the marking is missing from extracted text. Render and inspect the PDF page.
 
 3. QUESTION EXTRACTION RULES
 
-- Extract every visible question in the original page order.
-- Do not omit, duplicate, merge, or rearrange questions.
-- Preserve the exact original wording, spelling, punctuation, mathematical expressions, symbols, numbers, units, and sequences.
+- Extract every visible question in original page order. Do not omit, duplicate, merge, or rearrange questions.
+- Preserve exact original wording, spelling, punctuation, mathematical expressions, symbols, numbers, units, tables, sequences, and option order.
 - Extract every answer option exactly as printed.
-- Preserve the original option order.
-- Include tables, diagrams, statements, and other question-specific information in the question text whenever necessary to understand the question independently.
+- Include tables, diagrams, statements, and question-specific information when necessary to understand the question independently.
 - For passage-based questions, include the relevant passage context with each question.
-- Preserve the original language. Do not translate or paraphrase questions or options.
-- Do not correct spelling or grammatical errors in the source.
+- Preserve the original language. Do not translate, paraphrase, or correct the source.
 
 4. CORRECT ANSWER RULES
 
-The "correct_answer" value must contain the exact text of the officially marked correct option.
+The "correct_answer" value must contain the exact text of the officially marked correct option, not its option letter unless the option itself consists only of that letter.
 
-Example:
+Example: If option C is "300" and has the green tick, return "correct_answer": "300".
 
-If the PDF visually shows:
-
-- A. 100
-- B. 200
-- C. 300 ✓
-- D. 400
-
-Return:
-
-"correct_answer": "300"
-
-Do not return "C" unless the option itself consists only of the letter C.
-
-Never calculate, solve, infer, or guess an answer to fill a missing official marking.
-
-Never use general knowledge or an external answer key to replace the PDF's markings.
-
-If no official correct-answer marking can be confidently identified, return:
-
-"correct_answer": null
+Never calculate, solve, infer, or guess an answer. Never use general knowledge or an external answer key to replace the PDF's markings. If no official marking can be confidently identified, return "correct_answer": null.
 
 5. PAGE-BY-PAGE VERIFICATION
 
-Follow this mandatory workflow:
-
+Before producing the output:
 1. Determine the total number of PDF pages.
 2. Inspect every page in its original visual form.
 3. Extract the question text and all options.
-4. Visually inspect the answer indicators beside each option.
+4. Visually inspect answer indicators beside every option.
 5. Match every green tick to the correct question and option.
-6. Verify that red crosses have not been interpreted as correct answers.
+6. Ensure red crosses are not interpreted as correct answers.
 7. Check question order and ensure no question is missing or duplicated.
-8. Validate the final JSON syntax.
+8. Validate the complete JSON using strict JSON syntax.
 
 Do not skip pages because their text extraction appears empty or incomplete. Render and inspect those pages visually.
 
-6. OUTPUT FORMAT
+6. STRICT JSON OUTPUT — MANDATORY
 
-Return valid JSON with exactly this structure:
+The final response MUST contain exactly ONE JSON object, formatted inside ONE fenced JSON code block so the interface displays a copy button.
 
+Follow this exact response layout:
+
+```json
 {
-"questions": [
-{
-"question": "Complete original question text",
-"options": [
-"Option A text",
-"Option B text",
-"Option C text",
-"Option D text"
-],
-"correct_answer": "Exact text of the officially green-ticked option"
-},
-{
-"question": "Next complete original question",
-"options": [
-"Option A text",
-"Option B text",
-"Option C text",
-"Option D text"
-],
-"correct_answer": null
+  "questions": [
+    {
+      "question": "Complete original question text",
+      "options": [
+        "Option A text",
+        "Option B text",
+        "Option C text",
+        "Option D text"
+      ],
+      "correct_answer": "Exact text of the officially green-ticked option"
+    },
+    {
+      "question": "Next complete original question",
+      "options": [
+        "Option A text",
+        "Option B text",
+        "Option C text",
+        "Option D text"
+      ],
+      "correct_answer": null
+    }
+  ]
 }
-]
-}
+```
 
-7. JSON VALIDATION
+ABSOLUTE OUTPUT RULES:
+- Output one opening ```json fence and one closing ``` fence only.
+- Put the entire JSON object inside that single code block.
+- Do not write ANY greeting, introduction, heading, explanation, note, warning, summary, or commentary outside the code block.
+- Do not put comments inside the JSON.
+- Do not output multiple JSON objects or multiple code blocks in one response.
+- Do not append question counts, batch labels, citations, or any other text after the closing code fence.
+- The first character inside the code block must be { and the last character must be }.
+- Use double quotes for all JSON keys and string values.
+- Use null as the unquoted JSON value null, never as the string "null".
+- Use valid JSON escaping for quotation marks, backslashes, and control characters.
+- Do not use trailing commas.
+- Do not use JavaScript syntax, single-quoted strings, or Markdown formatting inside the JSON.
 
-Before returning the result, verify:
+7. JSON SELF-VALIDATION — MANDATORY
 
-- The output is valid, parseable JSON.
-- There are no Markdown code fences or explanatory comments.
-- All strings use valid JSON escaping.
-- No unnecessary backslashes appear before square brackets or other characters.
-- Every question has exactly three fields: "question", "options", and "correct_answer".
-- "options" is always an array of strings.
-- "correct_answer" is either an exact option string or "null".
-- No additional fields are present.
+Before sending the response, internally validate the JSON object:
+- Parse the JSON mentally or with an available JSON validator. Do not send it unless it is valid strict JSON.
+- Confirm the root is one object containing exactly one "questions" array.
+- Confirm every question object contains exactly "question", "options", and "correct_answer".
+- Confirm "question" is a string.
+- Confirm "options" is an array containing only non-empty strings.
+- Confirm "correct_answer" is either an exact option string or null.
+- Confirm there are no extra keys, missing commas, trailing commas, unmatched braces, unmatched brackets, or unescaped quotation marks.
+- Confirm there is no content before or after the JSON code block.
 
 8. LARGE PDF HANDLING
 
-If the PDF is too large for one response:
-
-- Extract questions in sequential batches.
-- Maintain the original page and question order.
-- Continue from the exact point where the previous batch ended.
-- Never repeat questions from earlier batches.
-- Use the same JSON structure for every batch.
+If the entire PDF cannot fit in one response:
+- Return one sequential batch per response.
+- Each response must independently contain exactly one complete JSON object inside one ```json code block.
+- Maintain original page and question order across batches.
+- Continue from the exact point where the previous batch ended. Never repeat earlier questions.
+- Do not combine multiple batches into one response and do not append continuation notes outside the code block.
 - Do not sacrifice visual answer-marking verification to increase extraction speed.
 
 FINAL PRIORITY
 
-Accuracy and source fidelity are more important than speed.
+Accuracy, source fidelity, and syntactically valid JSON are mandatory. Every visible official green-tick answer must be captured. Never leave a correct_answer as null when its green tick is visibly identifiable.
 
-Every question must be extracted from the PDF, and every available official green-tick answer must be captured. Do not leave a correct answer as null when its green tick is visibly identifiable in the PDF.
-
-Return ONLY valid JSON. No commentary, no explanations, and no Markdown fences.`;
+Return ONLY the single fenced JSON code block. The code block must contain valid JSON and nothing else.`;
 
 export default function PyqImportPage() {
   const [jsonText, setJsonText] = useState('');
