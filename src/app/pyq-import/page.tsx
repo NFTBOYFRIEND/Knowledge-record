@@ -166,7 +166,7 @@ export default function PyqImportPage() {
   const [loading, setLoading] = useState(false);
   const [parsed, setParsed] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
-  const [promptCopied, setPromptCopied] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);\n  const [editIndex, setEditIndex] = useState<number | null>(null);\n  const [editDraft, setEditDraft] = useState('');
 
   async function copyExtractionPrompt() {
     try {
@@ -235,6 +235,72 @@ export default function PyqImportPage() {
       setStatus(`Could not parse or repair JSON: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
+    }
+  }
+
+  function removeQuestion(index: number) {
+    try {
+      const current = parseQuestionJson(jsonText).value as { questions: unknown[] };
+      const nextQuestions = current.questions.filter((_, i) => i !== index);
+      const nextText = JSON.stringify({ questions: nextQuestions }, null, 2);
+      setJsonText(nextText);
+      setRepairPreview(null);
+      setPrepared([]);
+      setParsed(false);
+      setEditIndex(null);
+      setStatus(`Removed question ${index + 1}. Validate again to refresh the import preview.`);
+      const nextIssues = [...validateQuestionJson({ questions: nextQuestions })];
+      setIssues(nextIssues);
+      setParsed(true);
+      if (nextIssues.length === 0) {
+        const finalExamName = examName.trim();
+        const finalYear = Number(examYear);
+        const metadataIssues: ImportIssue[] = [];
+        if (!finalExamName) metadataIssues.push({ path: 'exam_name', message: 'Enter the exam name in the form above.' });
+        if (!Number.isInteger(finalYear) || finalYear < 1900 || finalYear > 2100) metadataIssues.push({ path: 'exam_year', message: 'Enter a valid four-digit exam year.' });
+        setIssues(metadataIssues);
+        if (!metadataIssues.length) {
+          setPrepared(nextQuestions.map((raw: any) => ({
+            exam_name: finalExamName,
+            exam_year: finalYear,
+            question: raw.question.trim(),
+            options: raw.options.map((option: string) => option.trim()),
+            correct_answer: raw.correct_answer,
+          })));
+        }
+      }
+    } catch (error) {
+      setStatus(`Could not remove question: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  function startEditQuestion(index: number) {
+    try {
+      const current = parseQuestionJson(jsonText).value as { questions: Array<{ question: string; options: string[]; correct_answer: string | null }> };
+      setEditIndex(index);
+      setEditDraft(JSON.stringify(current.questions[index], null, 2));
+    } catch {
+      setStatus('Could not load this question for editing. Correct JSON syntax first.');
+    }
+  }
+
+  function saveEditedQuestion() {
+    if (editIndex === null) return;
+    try {
+      const edited = JSON.parse(editDraft) as { question: string; options: string[]; correct_answer: string | null };
+      const current = parseQuestionJson(jsonText).value as { questions: unknown[] };
+      const nextQuestions = [...current.questions];
+      nextQuestions[editIndex] = edited;
+      const nextText = JSON.stringify({ questions: nextQuestions }, null, 2);
+      setJsonText(nextText);
+      setEditIndex(null);
+      setEditDraft('');
+      setPrepared([]);
+      setParsed(false);
+      setRepairPreview(null);
+      setStatus(`Saved changes to question ${editIndex + 1}. Validate again to refresh the import preview.`);
+    } catch (error) {
+      setStatus(`Edited question is not valid JSON: ${error instanceof Error ? error.message : 'Invalid JSON'}`);
     }
   }
 
@@ -344,6 +410,12 @@ export default function PyqImportPage() {
           </div>
           <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold text-amber-950">Show corrected JSON</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-3 text-xs">{repairPreview}</pre></details>
         </section>}
+        {editIndex !== null && <section className="mb-6 rounded-xl border border-blue-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between"><h2 className="font-bold">Edit question {editIndex + 1}</h2><button onClick={() => setEditIndex(null)} className="text-sm text-slate-500">Cancel</button></div>
+          <p className="mb-2 text-xs text-slate-500">Edit this complete question object as JSON. The editor checks syntax before saving.</p>
+          <textarea value={editDraft} onChange={e => setEditDraft(e.target.value)} className="min-h-56 w-full rounded border border-slate-300 p-3 font-mono text-sm" />
+          <button onClick={saveEditedQuestion} className="mt-3 rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Save question changes</button>
+        </section>}
         {status && <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">{status}</div>}
 
         {parsed && <>
@@ -354,8 +426,38 @@ export default function PyqImportPage() {
           </section>
 
           {issues.length > 0 && <section className="mb-6 rounded-xl border border-red-200 bg-red-50 p-5">
-            <h2 className="mb-2 font-bold text-red-900">Validation issues ({issues.length})</h2>
-            <ul className="max-h-64 list-disc space-y-1 overflow-auto pl-5 text-sm text-red-800">{issues.map((issue, i) => <li key={i}><strong>{issue.path}:</strong> {issue.message}</li>)}</ul>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-bold text-red-900">Question Issue Manager ({issues.length})</h2>
+              <span className="text-xs text-red-800">Resolve each issue before import</span>
+            </div>
+            <div className="space-y-3">
+              {issues.map((issue, i) => {
+                const index = issue.questionIndex;
+                const duplicateIndex = issue.duplicateOfIndex;
+                let questions: any[] = [];
+                try { questions = (parseQuestionJson(jsonText).value as { questions: any[] }).questions; } catch { /* syntax issue has no question preview */ }
+                const question = index !== undefined ? questions[index] : null;
+                const duplicate = duplicateIndex !== undefined ? questions[duplicateIndex] : null;
+                return <div key={`${issue.path}-${i}`} className="rounded-lg border border-red-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-red-900">{issue.code === 'duplicate_question' ? 'Duplicate question' : issue.code === 'invalid_correct_answer' ? 'Correct answer mismatch' : issue.code === 'invalid_options' ? 'Options need attention' : issue.code === 'missing_question' ? 'Question text missing' : 'Data validation issue'}</p>
+                      <p className="mt-1 text-xs text-slate-500">{issue.path}{index !== undefined ? ` · Question ${index + 1}` : ''}</p>
+                    </div>
+                    {index !== undefined && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800">Q{index + 1}</span>}
+                  </div>
+                  <p className="mt-2 text-sm text-slate-800">{issue.message}</p>
+                  {question && <div className="mt-3 rounded bg-slate-50 p-3 text-sm">
+                    <p className="font-medium">{question.question || '(Empty question text)'}</p>
+                    {duplicate && <div className="mt-2 border-t pt-2"><p className="text-xs font-semibold text-slate-500">Matches Q{duplicateIndex! + 1}</p><p className="mt-1">{duplicate.question}</p></div>}
+                  </div>}
+                  {index !== undefined && <div className="mt-3 flex flex-wrap gap-2">
+                    {issue.code === 'duplicate_question' && <button onClick={() => removeQuestion(index)} className="rounded bg-red-700 px-3 py-2 text-xs font-semibold text-white hover:bg-red-800">Remove Q{index + 1}</button>}
+                    <button onClick={() => startEditQuestion(index)} className="rounded border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit Q{index + 1}</button>
+                  </div>}
+                </div>;
+              })}
+            </div>
           </section>}
 
           <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
