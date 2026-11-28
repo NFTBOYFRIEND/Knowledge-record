@@ -185,12 +185,12 @@ export default function PyqImportPage() {
     setPrepared([]);
     setParsed(false);
     setRepairPreview(null);
-    setNeedsCorrection(false);
     setSyntaxError('');
     setLoading(true);
 
     try {
       const parsedResult = parseQuestionJson(jsonText);
+      setNeedsCorrection(false);
       if (parsedResult.syntaxError) setSyntaxError(parsedResult.syntaxError);
       if (parsedResult.repaired && parsedResult.correctedText) {
         setRepairPreview(parsedResult.correctedText);
