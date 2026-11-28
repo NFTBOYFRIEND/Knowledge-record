@@ -292,6 +292,8 @@ export default function PyqImportPage() {
       setJsonText('');
       setPrepared([]);
       setParsed(false);
+      setRepairPreview(null);
+      setRepairApproved(false);
     } catch (error: any) {
       setStatus(`Import stopped after ${importedCount} inserted rows: ${error.message}. Check the table before retrying to avoid duplicate imports.`);
     } finally {
