@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 type PreparedQuestion = {
@@ -61,7 +61,11 @@ No Markdown fences or commentary. Accuracy and source fidelity are more importan
 export default function PyqImportPage() {
   const [jsonText, setJsonText] = useState('');
   const [examName, setExamName] = useState('');
-  const [examYear, setExamYear] = useState(String(new Date().getFullYear()));
+  const [examYear, setExamYear] = useState('');
+
+  useEffect(() => {
+    setExamYear(String(new Date().getFullYear()));
+  }, []);
   const [prepared, setPrepared] = useState<PreparedQuestion[]>([]);
   const [issues, setIssues] = useState<string[]>([]);
   const [status, setStatus] = useState('');
