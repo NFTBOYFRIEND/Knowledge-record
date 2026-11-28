@@ -158,7 +158,10 @@ export default function PyqImportPage() {
     setExamYear(String(new Date().getFullYear()));
   }, []);
   const [prepared, setPrepared] = useState<PreparedQuestion[]>([]);
-  const [issues, setIssues] = useState<ImportIssue[]>([]);\n  const [repairPreview, setRepairPreview] = useState<string | null>(null);\n  const [repairApproved, setRepairApproved] = useState(false);\n  const [syntaxError, setSyntaxError] = useState('');
+  const [issues, setIssues] = useState<ImportIssue[]>([]);
+  const [repairPreview, setRepairPreview] = useState<string | null>(null);
+  const [repairApproved, setRepairApproved] = useState(false);
+  const [syntaxError, setSyntaxError] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [parsed, setParsed] = useState(false);
