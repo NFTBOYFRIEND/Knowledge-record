@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { parseQuestionJson, validateQuestionJson, type ImportIssue } from '@/lib/question-json-validation';
+import { parseQuestionJson, stripJsonFence, validateQuestionJson, type ImportIssue } from '@/lib/question-json-validation';
 
 type PreparedQuestion = {
   exam_name: string;
@@ -160,7 +160,7 @@ export default function PyqImportPage() {
   const [prepared, setPrepared] = useState<PreparedQuestion[]>([]);
   const [issues, setIssues] = useState<ImportIssue[]>([]);
   const [repairPreview, setRepairPreview] = useState<string | null>(null);
-  const [repairApproved, setRepairApproved] = useState(false);
+  const [needsCorrection, setNeedsCorrection] = useState(false);
   const [syntaxError, setSyntaxError] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
@@ -185,7 +185,7 @@ export default function PyqImportPage() {
     setPrepared([]);
     setParsed(false);
     setRepairPreview(null);
-    setRepairApproved(false);
+    setNeedsCorrection(false);
     setSyntaxError('');
     setLoading(true);
 
@@ -227,9 +227,8 @@ export default function PyqImportPage() {
       setPrepared(staged);
       setParsed(true);
       if (parsedResult.repaired) {
-        setStatus('JSON syntax was automatically repaired. Review the corrected JSON and approve it before importing.');
+        setStatus(`JSON corrected successfully. ${staged.length} questions passed validation. Confirm the import below.`);
       } else {
-        setRepairApproved(true);
         setStatus(`Validated ${staged.length} questions. Ready for review and import.`);
       }
     } catch (error) {
@@ -240,7 +239,7 @@ export default function PyqImportPage() {
   }
 
   async function handleImport() {
-    if (!parsed || !prepared.length || issues.length || !repairApproved) return;
+    if (!parsed || !prepared.length || issues.length) return;
     setLoading(true);
     setStatus('');
     try {
@@ -294,7 +293,7 @@ export default function PyqImportPage() {
       setPrepared([]);
       setParsed(false);
       setRepairPreview(null);
-      setRepairApproved(false);
+      setNeedsCorrection(false);
     } catch (error: any) {
       setStatus(`Import stopped after ${importedCount} inserted rows: ${error.message}. Check the table before retrying to avoid duplicate imports.`);
     } finally {
@@ -332,9 +331,9 @@ export default function PyqImportPage() {
             <h2 className="text-lg font-bold">1. Gemini JSON</h2>
             <span className="text-xs text-slate-500">Required: questions[]</span>
           </div>
-          <textarea value={jsonText} onChange={e => { setJsonText(e.target.value); setParsed(false); setPrepared([]); setIssues([]); setRepairPreview(null); setRepairApproved(false); setSyntaxError(''); }} placeholder={'Paste Gemini JSON here…\n\n{\n  "questions": [\n    { "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "Exact option text" }\n  ]\n}'} className="min-h-[320px] w-full rounded-lg border border-slate-300 bg-slate-50 p-4 font-mono text-sm outline-none focus:border-blue-500" />
+          <textarea value={jsonText} onChange={e => { const value = e.target.value; setJsonText(value); setParsed(false); setPrepared([]); setIssues([]); setRepairPreview(null); setSyntaxError(''); setStatus(''); try { JSON.parse(stripJsonFence(value)); setNeedsCorrection(false); } catch { setNeedsCorrection(Boolean(value.trim())); } }} placeholder={'Paste Gemini JSON here…\n\n{\n  "questions": [\n    { "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "Exact option text" }\n  ]\n}'} className="min-h-[320px] w-full rounded-lg border border-slate-300 bg-slate-50 p-4 font-mono text-sm outline-none focus:border-blue-500" />
           <div className="mt-4 flex flex-wrap gap-3">
-            <button onClick={parseAndValidate} disabled={loading || !jsonText.trim()} className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-50">Parse, repair & validate</button>
+            <button onClick={parseAndValidate} disabled={loading || !jsonText.trim()} className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{loading ? 'Processing…' : needsCorrection ? 'Correct JSON' : 'Validate JSON'}</button>
           </div>
         </section>
 
@@ -342,7 +341,6 @@ export default function PyqImportPage() {
         {repairPreview && <section className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h2 className="font-bold text-amber-950">Automatic syntax repair applied</h2><p className="text-sm text-amber-900">Review the corrected JSON before importing. Syntax repair does not verify the correctness of the extracted questions.</p></div>
-            <button onClick={() => setRepairApproved(true)} disabled={repairApproved || issues.length > 0 || !parsed} className="rounded-lg bg-amber-800 px-4 py-2 font-semibold text-white disabled:opacity-50">{repairApproved ? 'Repair approved ✓' : 'I reviewed and approve'}</button>
           </div>
           <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold text-amber-950">Show corrected JSON</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-3 text-xs">{repairPreview}</pre></details>
         </section>}
@@ -363,7 +361,7 @@ export default function PyqImportPage() {
           <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b p-5">
               <div><h2 className="text-lg font-bold">2. Import preview</h2><p className="text-sm text-slate-500">{examName} · {examYear}</p></div>
-              <button onClick={handleImport} disabled={loading || issues.length > 0 || prepared.length === 0 || !repairApproved} className="rounded-lg bg-emerald-700 px-6 py-3 font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">{loading ? 'Importing…' : repairApproved ? 'Confirm & import PYQs' : 'Review repair to enable import'}</button>
+              <button onClick={handleImport} disabled={loading || issues.length > 0 || prepared.length === 0} className="rounded-lg bg-emerald-700 px-6 py-3 font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300">{loading ? 'Importing…' : 'Confirm & import PYQs'}</button>
             </div>
             <div className="max-h-[560px] overflow-auto">
               <table className="w-full min-w-[850px] text-left text-sm">
