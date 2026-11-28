@@ -80,7 +80,7 @@ The final response MUST contain exactly ONE JSON object, formatted inside ONE fe
 
 Follow this exact response layout:
 
-```json
+\`\`\`json
 {
   "questions": [
     {
@@ -105,10 +105,10 @@ Follow this exact response layout:
     }
   ]
 }
-```
+\`\`\`
 
 ABSOLUTE OUTPUT RULES:
-- Output one opening ```json fence and one closing ``` fence only.
+- Output one opening \`\`\`json fence and one closing \`\`\` fence only.
 - Put the entire JSON object inside that single code block.
 - Do not write ANY greeting, introduction, heading, explanation, note, warning, summary, or commentary outside the code block.
 - Do not put comments inside the JSON.
@@ -137,7 +137,7 @@ Before sending the response, internally validate the JSON object:
 
 If the entire PDF cannot fit in one response:
 - Return one sequential batch per response.
-- Each response must independently contain exactly one complete JSON object inside one ```json code block.
+- Each response must independently contain exactly one complete JSON object inside one \`\`\`json code block.
 - Maintain original page and question order across batches.
 - Continue from the exact point where the previous batch ended. Never repeat earlier questions.
 - Do not combine multiple batches into one response and do not append continuation notes outside the code block.
