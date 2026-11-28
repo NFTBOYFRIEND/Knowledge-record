@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { parseQuestionJson, validateQuestionJson, type ImportIssue } from '@/lib/question-json-validation';
 
 type PreparedQuestion = {
   exam_name: string;
@@ -10,8 +11,6 @@ type PreparedQuestion = {
   options: string[];
   correct_answer: string | null;
 };
-
-import { parseQuestionJson, validateQuestionJson, type ImportIssue } from '@/lib/question-json-validation';
 
 const norm = (value: unknown) =>
   String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase().replace(/\\s+/g, ' ');
