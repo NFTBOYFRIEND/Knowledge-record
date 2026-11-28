@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { parseQuestionJson, stripJsonFence, validateQuestionJson, type ImportIssue } from '@/lib/question-json-validation';
 
 type PreparedQuestion = {
   exam_name: string;
@@ -13,9 +14,6 @@ type PreparedQuestion = {
 
 const norm = (value: unknown) =>
   String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
-
-const asObject = (value: any) =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 
 const EXTRACTION_PROMPT = `ROLE: PRECISION QUESTION PAPER AND ANSWER KEY EXTRACTOR
 
@@ -82,7 +80,7 @@ The final response MUST contain exactly ONE JSON object, formatted inside ONE fe
 
 Follow this exact response layout:
 
-```json
+\`\`\`json
 {
   "questions": [
     {
@@ -107,10 +105,10 @@ Follow this exact response layout:
     }
   ]
 }
-```
+\`\`\`
 
 ABSOLUTE OUTPUT RULES:
-- Output one opening ```json fence and one closing ``` fence only.
+- Output one opening \`\`\`json fence and one closing \`\`\` fence only.
 - Put the entire JSON object inside that single code block.
 - Do not write ANY greeting, introduction, heading, explanation, note, warning, summary, or commentary outside the code block.
 - Do not put comments inside the JSON.
@@ -139,7 +137,7 @@ Before sending the response, internally validate the JSON object:
 
 If the entire PDF cannot fit in one response:
 - Return one sequential batch per response.
-- Each response must independently contain exactly one complete JSON object inside one ```json code block.
+- Each response must independently contain exactly one complete JSON object inside one \`\`\`json code block.
 - Maintain original page and question order across batches.
 - Continue from the exact point where the previous batch ended. Never repeat earlier questions.
 - Do not combine multiple batches into one response and do not append continuation notes outside the code block.
@@ -160,7 +158,10 @@ export default function PyqImportPage() {
     setExamYear(String(new Date().getFullYear()));
   }, []);
   const [prepared, setPrepared] = useState<PreparedQuestion[]>([]);
-  const [issues, setIssues] = useState<string[]>([]);
+  const [issues, setIssues] = useState<ImportIssue[]>([]);
+  const [repairPreview, setRepairPreview] = useState<string | null>(null);
+  const [needsCorrection, setNeedsCorrection] = useState(false);
+  const [syntaxError, setSyntaxError] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [parsed, setParsed] = useState(false);
@@ -181,75 +182,57 @@ export default function PyqImportPage() {
     setIssues([]);
     setStatus('');
     setImportedCount(0);
+    setPrepared([]);
+    setParsed(false);
+    setRepairPreview(null);
+    setSyntaxError('');
     setLoading(true);
+
     try {
-      const cleaned = jsonText.trim()
-        .replace(/^\x60\x60\x60(?:json)?\s*/i, '')
-        .replace(/\s*\x60\x60\x60$/, '');
-      const root = JSON.parse(cleaned);
-      // Exam identity is authoritative from the frontend form, never from AI JSON.
+      const parsedResult = parseQuestionJson(jsonText);
+      setNeedsCorrection(false);
+      if (parsedResult.syntaxError) setSyntaxError(parsedResult.syntaxError);
+      if (parsedResult.repaired && parsedResult.correctedText) {
+        setRepairPreview(parsedResult.correctedText);
+        setJsonText(parsedResult.correctedText);
+      }
+
       const finalExamName = examName.trim();
       const finalYear = Number(examYear);
-
-      if (!finalExamName) throw new Error('Enter the exam name in the form above.');
+      const metadataIssues: ImportIssue[] = [];
+      if (!finalExamName) metadataIssues.push({ path: 'exam_name', message: 'Enter the exam name in the form above.' });
       if (!Number.isInteger(finalYear) || finalYear < 1900 || finalYear > 2100) {
-        throw new Error('Enter a valid four-digit exam year in the form above.');
+        metadataIssues.push({ path: 'exam_year', message: 'Enter a valid four-digit exam year.' });
       }
 
-      const rows = Array.isArray(root) ? root : root.questions;
-      if (!Array.isArray(rows) || rows.length === 0) {
-        throw new Error('JSON must contain a non-empty questions array.');
+      const validationIssues = [...metadataIssues, ...validateQuestionJson(parsedResult.value)];
+      setIssues(validationIssues);
+      setParsed(true);
+      if (validationIssues.length) {
+        setStatus('Validation found blocking issues. Fix the listed items and validate again.');
+        return;
       }
 
-      const localIssues: string[] = [];
-      const staged: PreparedQuestion[] = rows.map((raw: any, index: number) => {
-        const item = asObject(raw);
-        const question = String(item.question ?? item.question_text ?? '').trim();
-        const rawOptions = item.options;
-        const options = Array.isArray(rawOptions)
-          ? rawOptions.map((option: any) => String(option ?? '').trim())
-          : [];
-
-        if (!question) localIssues.push(`Question ${index + 1}: question text is missing.`);
-        if (!Array.isArray(rawOptions)) {
-          localIssues.push(`Question ${index + 1}: options must be a JSON array.`);
-        } else if (options.length === 0 || options.some((option: string) => !option)) {
-          localIssues.push(`Question ${index + 1}: options are empty or contain blank entries.`);
-        }
-
-        const rawAnswer = item.correct_answer ?? item.answer ?? null;
-        const correctAnswer = rawAnswer == null || String(rawAnswer).trim() === ''
-          ? null
-          : String(rawAnswer).trim();
-
-        return {
-          exam_name: finalExamName,
-          exam_year: finalYear,
-          question,
-          options,
-          correct_answer: correctAnswer,
-        };
-      });
-
-      const seen = new Set<string>();
-      staged.forEach((q, index) => {
-        const key = norm(q.question);
-        if (key && seen.has(key)) localIssues.push(`Question ${index + 1}: duplicate question inside this JSON payload.`);
-        seen.add(key);
-      });
+      const root = parsedResult.value as { questions: Array<{ question: string; options: string[]; correct_answer: string | null }> };
+      const staged: PreparedQuestion[] = root.questions.map(item => ({
+        exam_name: finalExamName,
+        exam_year: finalYear,
+        question: item.question.trim(),
+        options: item.options.map(option => option.trim()),
+        correct_answer: item.correct_answer,
+      }));
 
       setExamName(finalExamName);
       setExamYear(String(finalYear));
       setPrepared(staged);
-      setIssues(localIssues);
       setParsed(true);
-      setStatus(localIssues.length
-        ? 'Validation found issues. Correct the JSON before importing.'
-        : `Validated ${staged.length} questions. Only exam_name, exam_year, question, options and correct_answer will be inserted.`);
-    } catch (error: any) {
-      setPrepared([]);
-      setParsed(false);
-      setStatus(error.message || 'Could not parse JSON.');
+      if (parsedResult.repaired) {
+        setStatus(`JSON corrected successfully. ${staged.length} questions passed validation. Confirm the import below.`);
+      } else {
+        setStatus(`Validated ${staged.length} questions. Ready for review and import.`);
+      }
+    } catch (error) {
+      setStatus(`Could not parse or repair JSON: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -309,6 +292,8 @@ export default function PyqImportPage() {
       setJsonText('');
       setPrepared([]);
       setParsed(false);
+      setRepairPreview(null);
+      setNeedsCorrection(false);
     } catch (error: any) {
       setStatus(`Import stopped after ${importedCount} inserted rows: ${error.message}. Check the table before retrying to avoid duplicate imports.`);
     } finally {
@@ -346,12 +331,19 @@ export default function PyqImportPage() {
             <h2 className="text-lg font-bold">1. Gemini JSON</h2>
             <span className="text-xs text-slate-500">Required: questions[]</span>
           </div>
-          <textarea value={jsonText} onChange={e => { setJsonText(e.target.value); setParsed(false); setPrepared([]); setIssues([]); }} placeholder={'Paste Gemini JSON here…\n\n{\n  "questions": [\n    { "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "Exact option text" }\n  ]\n}'} className="min-h-[320px] w-full rounded-lg border border-slate-300 bg-slate-50 p-4 font-mono text-sm outline-none focus:border-blue-500" />
+          <textarea value={jsonText} onChange={e => { const value = e.target.value; setJsonText(value); setParsed(false); setPrepared([]); setIssues([]); setRepairPreview(null); setSyntaxError(''); setStatus(''); try { JSON.parse(stripJsonFence(value)); setNeedsCorrection(false); } catch { setNeedsCorrection(Boolean(value.trim())); } }} placeholder={'Paste Gemini JSON here…\n\n{\n  "questions": [\n    { "question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "Exact option text" }\n  ]\n}'} className="min-h-[320px] w-full rounded-lg border border-slate-300 bg-slate-50 p-4 font-mono text-sm outline-none focus:border-blue-500" />
           <div className="mt-4 flex flex-wrap gap-3">
-            <button onClick={parseAndValidate} disabled={loading || !jsonText.trim()} className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-50">Parse & validate</button>
+            <button onClick={parseAndValidate} disabled={loading || !jsonText.trim()} className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{loading ? 'Processing…' : needsCorrection ? 'Correct JSON' : 'Validate JSON'}</button>
           </div>
         </section>
 
+        {syntaxError && <p className="mb-3 text-sm text-amber-800">Initial strict JSON parser error: {syntaxError}</p>}
+        {repairPreview && <section className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="font-bold text-amber-950">Automatic syntax repair applied</h2><p className="text-sm text-amber-900">Review the corrected JSON before importing. Syntax repair does not verify the correctness of the extracted questions.</p></div>
+          </div>
+          <details className="mt-3"><summary className="cursor-pointer text-sm font-semibold text-amber-950">Show corrected JSON</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-3 text-xs">{repairPreview}</pre></details>
+        </section>}
         {status && <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">{status}</div>}
 
         {parsed && <>
@@ -363,7 +355,7 @@ export default function PyqImportPage() {
 
           {issues.length > 0 && <section className="mb-6 rounded-xl border border-red-200 bg-red-50 p-5">
             <h2 className="mb-2 font-bold text-red-900">Validation issues ({issues.length})</h2>
-            <ul className="max-h-64 list-disc space-y-1 overflow-auto pl-5 text-sm text-red-800">{issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul>
+            <ul className="max-h-64 list-disc space-y-1 overflow-auto pl-5 text-sm text-red-800">{issues.map((issue, i) => <li key={i}><strong>{issue.path}:</strong> {issue.message}</li>)}</ul>
           </section>}
 
           <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
